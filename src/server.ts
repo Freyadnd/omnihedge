@@ -5,6 +5,7 @@ import { HedgeAgent } from './agent';
 import { fetchPolymarketEvents, selectForAgent } from './polymarket';
 import { fetchWalletPositions, DEFAULT_TOKENS } from './chain';
 import { storeBlob, fetchBlob, blobUrl } from './walrus';
+import { paymentMiddlewareFromHTTPServer } from '@x402/express';
 import type { AgentInput, Position, HedgeAnalysisOutput } from './types';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
@@ -23,6 +24,19 @@ const DEMO_NEWS = [
 const app = express();
 app.use(express.json());
 app.use(express.static(path.resolve('public')));
+
+// ── AgentKit + x402 payment gate on /api/analyze ──────────────────────────────
+// Human-backed agents (World ID verified) get FREE_USES free analyses.
+// Unverified callers pay AGENTKIT_PRICE USDC per call.
+// Disabled if PAYMENT_ADDRESS is not set (local dev / demo mode).
+if (process.env.PAYMENT_ADDRESS) {
+  import('./agentkit').then(({ x402HttpServer }) => {
+    app.use(paymentMiddlewareFromHTTPServer(x402HttpServer));
+    console.log('[OmniHedge] AgentKit + x402 payment gate active on POST /api/analyze');
+  }).catch(err => {
+    console.warn('[OmniHedge] AgentKit setup failed (non-fatal):', err.message);
+  });
+}
 
 // ── POST /api/analyze ─────────────────────────────────────────────────────────
 
