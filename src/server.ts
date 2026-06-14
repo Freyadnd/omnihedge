@@ -4,7 +4,8 @@ import path from 'path';
 import { HedgeAgent } from './agent';
 import { fetchPolymarketEvents, selectForAgent } from './polymarket';
 import { fetchWalletPositions, DEFAULT_TOKENS } from './chain';
-import type { AgentInput, Position } from './types';
+import { storeBlob, fetchBlob, blobUrl } from './walrus';
+import type { AgentInput, Position, HedgeAnalysisOutput } from './types';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
@@ -21,7 +22,7 @@ const DEMO_NEWS = [
 
 const app = express();
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '..', 'public')));
+app.use(express.static(path.resolve('public')));
 
 // ── POST /api/analyze ─────────────────────────────────────────────────────────
 
@@ -55,10 +56,34 @@ app.post('/api/analyze', async (req, res) => {
     const agent = new HedgeAgent(undefined, model);
     const output = await agent.analyze(input);
 
-    res.json({ ok: true, input, output });
+    // Persist analysis to Walrus decentralised storage
+    let walrusBlobId: string | null = null;
+    let walrusUrl: string | null = null;
+    try {
+      walrusBlobId = await storeBlob({ input, output, storedAt: new Date().toISOString() });
+      walrusUrl = blobUrl(walrusBlobId);
+    } catch (walrusErr) {
+      console.warn('[OmniHedge] Walrus store failed (non-fatal):', walrusErr);
+    }
+
+    res.json({ ok: true, input, output, walrusBlobId, walrusUrl });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     res.status(500).json({ ok: false, error: message });
+  }
+});
+
+// ── GET /api/analysis/:blobId ─────────────────────────────────────────────────
+
+app.get('/api/analysis/:blobId', async (req, res) => {
+  try {
+    const data = await fetchBlob<{ input: AgentInput; output: HedgeAnalysisOutput; storedAt: string }>(
+      req.params.blobId
+    );
+    res.json({ ok: true, ...data });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    res.status(404).json({ ok: false, error: message });
   }
 });
 
@@ -75,9 +100,15 @@ app.get('/api/events', async (_req, res) => {
   }
 });
 
-// ── Start ─────────────────────────────────────────────────────────────────────
+// ── Export for Vercel serverless ──────────────────────────────────────────────
 
-app.listen(PORT, () => {
-  console.log(`\n[OmniHedge] Server running at http://localhost:${PORT}`);
-  console.log(`[OmniHedge] Model: ${process.env.OMNIHEDGE_MODEL ?? 'llama-3.3-70b-versatile'}\n`);
-});
+export default app;
+
+// ── Start (local dev / self-hosted) ───────────────────────────────────────────
+
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`\n[OmniHedge] Server running at http://localhost:${PORT}`);
+    console.log(`[OmniHedge] Model: ${process.env.OMNIHEDGE_MODEL ?? 'llama-3.3-70b-versatile'}\n`);
+  });
+}
