@@ -8,10 +8,15 @@
  *
  * CRE's consensus layer ensures all DON nodes agree on the analysis output
  * before any downstream action is taken — making the hedge signal verifiable.
+ *
+ * Two trigger modes:
+ *   - CronCapability  (staging/production): fires on schedule, portfolio from config
+ *   - HTTPCapability  (demo): triggered via --http-payload, portfolio from request body
  */
 
 import {
   CronCapability,
+  HTTPCapability,
   HTTPClient,
   consensusIdenticalAggregation,
   handler,
@@ -70,15 +75,33 @@ type HedgeSummary = {
   warnings: string[];
 };
 
+type PortfolioItem = {
+  token_symbol: string;
+  usd_value: number;
+  percentage_of_portfolio: number;
+};
+
 type AnalysisInput = {
   groqApiUrl: string;
   groqModel: string;
   groqApiKey: string;
-  portfolio: Config["portfolio"];
+  portfolio: PortfolioItem[];
   events: EventSummary[];
 };
 
+// HTTP trigger payload shape (mirrors Payload.input decoded from Uint8Array)
+type HTTPTriggerPayload = { input: Uint8Array };
+
 // ── Utilities ─────────────────────────────────────────────────────────────────
+
+// TextDecoder not available in Javy WASM runtime
+function uint8ArrayToString(bytes: Uint8Array): string {
+  let result = "";
+  for (let i = 0; i < bytes.length; i++) {
+    result += String.fromCharCode(bytes[i] as number);
+  }
+  return result;
+}
 
 const BASE64_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
@@ -247,12 +270,64 @@ export const onCronTrigger = (runtime: Runtime<Config>): string => {
   return JSON.stringify(analysis);
 };
 
+// ── HTTP trigger handler (demo mode) ─────────────────────────────────────────
+
+export const onHTTPTrigger = (
+  runtime: Runtime<Config>,
+  triggerOutput: HTTPTriggerPayload,
+): string => {
+  const { polymarketApiUrl, groqApiUrl, groqModel } = runtime.config;
+  const groqApiKey = runtime.getSecret({ id: "GROQ_API_KEY" }).result().value;
+
+  // Decode portfolio from HTTP payload body
+  const body = JSON.parse(uint8ArrayToString(triggerOutput.input)) as {
+    portfolio: PortfolioItem[];
+  };
+  const portfolio = body.portfolio;
+
+  runtime.log(`[OmniHedge] HTTP trigger — portfolio: ${portfolio.map((p) => p.token_symbol).join(", ")}`);
+
+  const httpClient = new HTTPClient();
+
+  const events = httpClient
+    .sendRequest(
+      runtime,
+      fetchPolymarketEvents,
+      consensusIdenticalAggregation<EventSummary[]>(),
+    )(polymarketApiUrl)
+    .result();
+
+  runtime.log(`[OmniHedge] Fetched ${events.length} Polymarket events`);
+
+  const analysis = httpClient
+    .sendRequest(
+      runtime,
+      runGroqAnalysis,
+      consensusIdenticalAggregation<HedgeSummary>(),
+    )({ groqApiUrl, groqModel, groqApiKey, portfolio, events })
+    .result();
+
+  runtime.log(`[OmniHedge] Status: ${analysis.status}`);
+  runtime.log(`[OmniHedge] Risk: ${analysis.portfolio_risk_score}`);
+  runtime.log(`[OmniHedge] Hedges: ${analysis.hedges?.length ?? 0}`);
+
+  for (const h of analysis.hedges ?? []) {
+    runtime.log(
+      `[OmniHedge]   ${h.hedge_side} "${h.event_title}" @ ${h.entry_price} → ${h.weight_pct}% allocation`,
+    );
+  }
+
+  return JSON.stringify(analysis);
+};
+
 // ── Workflow bootstrap ────────────────────────────────────────────────────────
 
 export const initWorkflow = (config: Config) => {
   const cron = new CronCapability();
+  const http = new HTTPCapability();
   return [
     handler(cron.trigger({ schedule: config.schedule }), onCronTrigger),
+    handler(http.trigger({ authorizedKeys: [] }), onHTTPTrigger),
   ];
 };
 

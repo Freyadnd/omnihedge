@@ -41,3 +41,12 @@ sim-settings:
     workflow-path: "./main.ts"
     config-path: "./config.sim.json"
     secrets-path: "../secrets.yaml"
+
+# ==========================================================================
+demo-settings:
+  user-workflow:
+    workflow-name: "omnihedge-hedge-analysis-demo"
+  workflow-artifacts:
+    workflow-path: "./main.ts"
+    config-path: "./config.sim.json"
+    secrets-path: "../secrets.yaml"
