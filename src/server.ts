@@ -38,6 +38,32 @@ if (process.env.PAYMENT_ADDRESS) {
   });
 }
 
+// ── Demo free-trial gate (mirrors World AgentKit logic) ───────────────────────
+// In production, World ID identity replaces this IP-based counter.
+let _demoCallCount = 0;
+const _FREE_USES = parseInt(process.env.AGENTKIT_FREE_USES ?? '3', 10);
+
+if (process.env.PAYMENT_ADDRESS) {
+  app.use('/api/analyze', (req, res, next) => {
+    if (req.method !== 'POST') return next();
+    _demoCallCount++;
+    if (_demoCallCount > _FREE_USES) {
+      res.status(402).json({
+        x402Version: 1,
+        error: 'Free trial exhausted. Payment required.',
+        accepts: [{
+          scheme: 'exact',
+          price: process.env.AGENTKIT_PRICE ?? '$0.02',
+          network: process.env.AGENTKIT_NETWORK ?? 'eip155:84532',
+          payTo: process.env.PAYMENT_ADDRESS,
+        }],
+      });
+      return;
+    }
+    next();
+  });
+}
+
 // ── POST /api/analyze ─────────────────────────────────────────────────────────
 
 app.post('/api/analyze', async (req, res) => {
@@ -57,8 +83,8 @@ app.post('/api/analyze', async (req, res) => {
     }
 
     // Events: fetch wide pool, then select best subset for agent token budget
-    const allEvents = await fetchPolymarketEvents({ limit: 400, minVolume: 5000 });
-    const events = selectForAgent(allEvents, 15);
+    const allEvents = await fetchPolymarketEvents({ limit: 100, minVolume: 5000 });
+    const events = selectForAgent(allEvents, 5);
 
     const input: AgentInput = {
       positions,
