@@ -37,6 +37,7 @@ export class HedgeAgent {
 
         const rawText = response.choices[0]?.message?.content ?? '';
         const parsed = this.extractJSON(rawText);
+        this.backfillDerivedFields(parsed);
         return HedgeAnalysisOutputSchema.parse(parsed);
       } catch (err) {
         lastError = err;
@@ -74,6 +75,31 @@ ${JSON.stringify(input.events, null, 2)}
 
 ## Macro & Sector News Snapshot
 ${JSON.stringify(input.news, null, 2)}`;
+  }
+
+  /**
+   * Fill in fields that are derivable from other fields,
+   * so Zod validation doesn't fail when the model omits them.
+   */
+  private backfillDerivedFields(parsed: unknown): void {
+    if (!parsed || typeof parsed !== 'object') return;
+    const out = parsed as Record<string, unknown>;
+
+    // Backfill canonical_fields.liquidity_tier from volume_usd
+    const eventAnalysis = out['event_analysis'];
+    if (Array.isArray(eventAnalysis)) {
+      for (const ea of eventAnalysis) {
+        if (!ea || typeof ea !== 'object') continue;
+        const cf = (ea as Record<string, unknown>)['canonical_fields'];
+        if (!cf || typeof cf !== 'object') continue;
+        const fields = cf as Record<string, unknown>;
+        if (!fields['liquidity_tier']) {
+          const vol = Number(fields['volume_usd'] ?? 0);
+          fields['liquidity_tier'] =
+            vol >= 50000 ? 'LIQUID' : vol >= 5000 ? 'THIN' : 'ILLIQUID';
+        }
+      }
+    }
   }
 
   private extractJSON(text: string): unknown {

@@ -35,6 +35,40 @@ export interface FetchOptions {
   minVolume?: number;
   /** How many parent events to request per page. Default: 100 */
   pageSize?: number;
+  /**
+   * Only return markets with yes_price inside this open range.
+   * Markets outside the range are near-resolved (no hedge value) and bloat the LLM context.
+   * Default: [0.05, 0.95]
+   */
+  priceRange?: [number, number];
+}
+
+// Keywords that make a market potentially relevant to a crypto/macro portfolio.
+// Used by selectForAgent() to prioritise relevant events.
+const RELEVANT_KEYWORDS = [
+  'fed', 'rate', 'cut', 'hike', 'inflation', 'fomc',
+  'bitcoin', 'btc', 'ethereum', 'eth', 'crypto', 'defi',
+  'stablecoin', 'usdc', 'usdt', 'sec', 'regulation',
+  'recession', 'gdp', 'cpi', 'yield', 'treasury',
+  'hype', 'hyperliquid', 'solana', 'sol',
+];
+
+/**
+ * Select the best subset of events to send to the LLM agent.
+ * Priority: keyword-relevant events first, then top-volume to fill quota.
+ * Caps at maxEvents to stay within model token limits.
+ */
+export function selectForAgent(
+  events: PredictionEvent[],
+  maxEvents = 30
+): PredictionEvent[] {
+  const relevant = events.filter((e) =>
+    RELEVANT_KEYWORDS.some((k) => e.title.toLowerCase().includes(k))
+  );
+  const rest = events.filter(
+    (e) => !RELEVANT_KEYWORDS.some((k) => e.title.toLowerCase().includes(k))
+  );
+  return [...relevant, ...rest].slice(0, maxEvents);
 }
 
 /**
@@ -44,7 +78,8 @@ export interface FetchOptions {
 export async function fetchPolymarketEvents(
   options: FetchOptions = {}
 ): Promise<PredictionEvent[]> {
-  const { limit = 400, minVolume = 5000, pageSize = 100 } = options;
+  const { limit = 400, minVolume = 5000, pageSize = 100, priceRange = [0.05, 0.95] } = options;
+  const [priceMin, priceMax] = priceRange;
 
   const url = new URL(`${GAMMA_API}/events`);
   url.searchParams.set('active', 'true');
@@ -74,7 +109,13 @@ export async function fetchPolymarketEvents(
       const resolutionDate = resolveDate(market.endDateIso ?? market.endDate);
       if (!resolutionDate) continue;
 
-      results.push(toEvent(market, vol, resolutionDate));
+      const event = toEvent(market, vol, resolutionDate);
+
+      // Pre-filter near-resolved markets — outside priceRange they have no hedge value
+      // and only waste LLM context tokens.
+      if (event.yes_price <= priceMin || event.yes_price >= priceMax) continue;
+
+      results.push(event);
     }
   }
 

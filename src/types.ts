@@ -84,7 +84,7 @@ export interface CanonicalFields {
   resolution_date: string | null;
   volume_usd: number;
   yes_price: number;
-  liquidity_tier: LiquidityTier;
+  liquidity_tier?: LiquidityTier;
 }
 
 export interface RelevanceScore {

@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { HedgeAgent } from './agent';
-import { fetchPolymarketEvents } from './polymarket';
+import { fetchPolymarketEvents, selectForAgent } from './polymarket';
+import { fetchWalletPositions, DEFAULT_TOKENS } from './chain';
 import type { AgentInput, HedgeAnalysisOutput } from './types';
 
 // ── Demo input (from design session) ─────────────────────────────────────────
@@ -140,20 +141,39 @@ async function main(): Promise<void> {
   }
 
   const model = process.env.OMNIHEDGE_MODEL ?? 'llama-3.3-70b-versatile';
+  const walletAddress = process.env.WALLET_ADDRESS ?? process.argv[2];
   const agent = new HedgeAgent(undefined, model);
 
-  const symbols = DEMO_INPUT.positions.map((p) => p.token_symbol).join(', ');
   console.log(`\n[OmniHedge] Model    : ${model}`);
-  console.log(`[OmniHedge] Portfolio: ${symbols}`);
-  console.log('[OmniHedge] Fetching Polymarket events...');
 
   const t0 = Date.now();
 
   try {
-    const liveEvents = await fetchPolymarketEvents({ limit: 400, minVolume: 5000 });
-    console.log(`[OmniHedge] Events   : ${liveEvents.length} live (volume >= $5k)`);
+    // Positions: live chain data if wallet provided, else demo fallback
+    let positions = DEMO_INPUT.positions;
+    if (walletAddress) {
+      console.log(`[OmniHedge] Wallet   : ${walletAddress}`);
+      console.log('[OmniHedge] Fetching on-chain positions...');
+      const livePositions = await fetchWalletPositions(walletAddress, {
+        tokens: DEFAULT_TOKENS,
+      });
+      if (livePositions.length > 0) {
+        positions = livePositions;
+        console.log(`[OmniHedge] Positions: ${livePositions.map((p) => p.token_symbol).join(', ')}`);
+      } else {
+        console.log('[OmniHedge] No on-chain positions found — using demo data');
+      }
+    } else {
+      console.log(`[OmniHedge] Portfolio: ${positions.map((p) => p.token_symbol).join(', ')} (demo)`);
+      console.log('[OmniHedge] Tip: set WALLET_ADDRESS env var to use live positions');
+    }
 
-    const input: AgentInput = { ...DEMO_INPUT, events: liveEvents };
+    console.log('[OmniHedge] Fetching Polymarket events...');
+    const allEvents = await fetchPolymarketEvents({ limit: 400, minVolume: 5000 });
+    const liveEvents = selectForAgent(allEvents, 15);
+    console.log(`[OmniHedge] Events   : ${allEvents.length} fetched → ${liveEvents.length} selected for agent`);
+
+    const input: AgentInput = { ...DEMO_INPUT, positions, events: liveEvents };
 
     console.log('[OmniHedge] Running analysis...\n');
     const output = await agent.analyze(input);

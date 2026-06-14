@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OmniHedge</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #08090d;
+      --surface:  #0f1117;
+      --border:   #1e2130;
+      --muted:    #3a3f55;
+      --text:     #c9cfe0;
+      --dim:      #6b7394;
+      --green:    #22c55e;
+      --red:      #ef4444;
+      --yellow:   #eab308;
+      --blue:     #3b82f6;
+      --accent:   #7c3aed;
+      --font:     'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 13px;
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    /* ── Layout ── */
+    header {
+      border-bottom: 1px solid var(--border);
+      padding: 18px 32px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .logo { font-size: 18px; font-weight: 700; color: #fff; letter-spacing: -0.5px; }
+    .logo span { color: var(--accent); }
+    .badge {
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #1e1232;
+      color: var(--accent);
+      border: 1px solid #3b1e6e;
+    }
+
+    main { max-width: 900px; margin: 0 auto; padding: 32px 24px; }
+
+    /* ── Input card ── */
+    .input-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 24px;
+      margin-bottom: 28px;
+    }
+    .input-card h2 { font-size: 14px; color: var(--dim); margin-bottom: 16px; letter-spacing: 0.08em; text-transform: uppercase; }
+    .row { display: flex; gap: 10px; align-items: stretch; }
+    input[type="text"] {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 13px;
+      padding: 10px 14px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input[type="text"]:focus { border-color: var(--accent); }
+    input[type="text"]::placeholder { color: var(--muted); }
+
+    button {
+      background: var(--accent);
+      border: none;
+      border-radius: 6px;
+      color: #fff;
+      cursor: pointer;
+      font-family: var(--font);
+      font-size: 13px;
+      font-weight: 600;
+      padding: 10px 22px;
+      transition: opacity 0.15s;
+      white-space: nowrap;
+    }
+    button:hover { opacity: 0.85; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .hint { color: var(--dim); font-size: 11px; margin-top: 10px; }
+
+    /* ── Status bar ── */
+    #status {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      color: var(--dim);
+      font-size: 12px;
+      margin-bottom: 20px;
+    }
+    #status.visible { display: flex; }
+    .spinner {
+      width: 14px; height: 14px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Results ── */
+    #results { display: none; }
+    #results.visible { display: block; }
+
+    /* ── Stat row ── */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .stat {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 18px;
+    }
+    .stat-label { color: var(--dim); font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 6px; }
+    .stat-value { font-size: 20px; font-weight: 700; color: #fff; }
+    .stat-value.HIGH  { color: var(--red); }
+    .stat-value.MEDIUM { color: var(--yellow); }
+    .stat-value.LOW   { color: var(--green); }
+    .stat-value.SUCCESS { color: var(--green); }
+    .stat-value.NO_HEDGE_AVAILABLE { color: var(--yellow); }
+
+    /* ── Section ── */
+    .section { margin-bottom: 20px; }
+    .section-title {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--dim);
+      margin-bottom: 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    /* ── Risk table ── */
+    .token-block {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 18px;
+      margin-bottom: 8px;
+    }
+    .token-header {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .token-symbol { font-size: 15px; font-weight: 700; color: #fff; }
+    .token-meta { color: var(--dim); font-size: 11px; }
+    .weight-bar-wrap { flex: 1; background: var(--border); border-radius: 999px; height: 4px; }
+    .weight-bar { height: 4px; border-radius: 999px; background: var(--accent); }
+
+    .factor-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 0;
+      border-top: 1px solid var(--border);
+    }
+    .factor-badge {
+      font-size: 9px;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .sev-HIGH   { background: #3b0a0a; color: var(--red); border: 1px solid #7f1d1d; }
+    .sev-MEDIUM { background: #2d1e00; color: var(--yellow); border: 1px solid #713f12; }
+    .sev-LOW    { background: #052012; color: var(--green); border: 1px solid #14532d; }
+
+    .factor-id { color: var(--text); font-size: 12px; }
+    .factor-rationale { color: var(--dim); font-size: 11px; margin-left: auto; max-width: 380px; text-align: right; }
+
+    /* ── Hedge card ── */
+    .hedge-card {
+      background: var(--surface);
+      border: 1px solid var(--green);
+      border-radius: 8px;
+      padding: 18px;
+      margin-bottom: 10px;
+      position: relative;
+      overflow: hidden;
+    }
+    .hedge-card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(34,197,94,0.04) 0%, transparent 60%);
+      pointer-events: none;
+    }
+    .hedge-title { font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 12px; }
+    .hedge-meta {
+      display: grid;
+      grid-template-columns: repeat(4, auto);
+      gap: 8px 20px;
+      margin-bottom: 14px;
+    }
+    .hedge-kv {}
+    .hedge-k { font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--dim); margin-bottom: 2px; }
+    .hedge-v { font-size: 13px; font-weight: 600; }
+    .hedge-v.YES { color: var(--green); }
+    .hedge-v.NO  { color: var(--red); }
+
+    .bar-wrap { background: var(--border); border-radius: 999px; height: 6px; margin-bottom: 6px; }
+    .bar-fill { height: 6px; border-radius: 999px; background: var(--green); transition: width 0.6s ease; }
+    .bar-label { display: flex; justify-content: space-between; color: var(--dim); font-size: 10px; }
+
+    .verification {
+      margin-top: 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      color: var(--dim);
+      font-size: 11px;
+      line-height: 1.7;
+    }
+    .verification summary { cursor: pointer; color: var(--text); font-size: 11px; }
+
+    /* ── No hedge ── */
+    .no-hedge {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 24px;
+      text-align: center;
+      color: var(--dim);
+    }
+    .no-hedge .icon { font-size: 28px; margin-bottom: 10px; }
+    .no-hedge p { font-size: 12px; max-width: 400px; margin: 0 auto; }
+
+    /* ── Skipped / warnings ── */
+    .list-row {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      padding: 7px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+    }
+    .list-row:last-child { border-bottom: none; }
+    .skip-id { color: var(--text); }
+    .skip-reason { color: var(--dim); font-size: 10px; margin-left: auto; }
+    .warn-text { color: var(--yellow); font-size: 11px; }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 9px;
+      padding: 1px 7px;
+      border-radius: 999px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 700;
+    }
+    .pill-green { background: #052012; color: var(--green); border: 1px solid #14532d; }
+    .pill-red   { background: #3b0a0a; color: var(--red);   border: 1px solid #7f1d1d; }
+
+    /* ── Error ── */
+    #error {
+      display: none;
+      background: #1a0505;
+      border: 1px solid #7f1d1d;
+      border-radius: 8px;
+      padding: 16px 20px;
+      color: var(--red);
+      font-size: 12px;
+      margin-bottom: 20px;
+    }
+    #error.visible { display: block; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">◈ Omni<span>Hedge</span></div>
+  <div class="badge">HyperEVM · Polymarket</div>
+</header>
+
+<main>
+  <!-- Input -->
+  <div class="input-card">
+    <h2>Portfolio Risk Analysis</h2>
+    <div class="row">
+      <input type="text" id="wallet" placeholder="HyperEVM wallet address (optional — leave blank for demo portfolio)" />
+      <button id="analyzeBtn" onclick="analyze()">Analyze</button>
+    </div>
+    <p class="hint">Fetches live Polymarket events and runs a 7-phase hedge analysis via LLM.</p>
+  </div>
+
+  <!-- Status -->
+  <div id="status">
+    <div class="spinner"></div>
+    <span id="statusText">Fetching events…</span>
+  </div>
+
+  <!-- Error -->
+  <div id="error"></div>
+
+  <!-- Results -->
+  <div id="results">
+
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-label">Portfolio Value</div>
+        <div class="stat-value" id="r-total"></div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Risk Score</div>
+        <div class="stat-value" id="r-risk"></div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Status</div>
+        <div class="stat-value" id="r-status"></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Risk Decomposition</div>
+      <div id="r-decomp"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Hedge Proposals</div>
+      <div id="r-hedges"></div>
+    </div>
+
+    <div class="section" id="warnings-section" style="display:none">
+      <div class="section-title">Warnings</div>
+      <div id="r-warnings"></div>
+    </div>
+
+    <div class="section" id="skipped-section" style="display:none">
+      <div class="section-title">Skipped Events</div>
+      <div id="r-skipped"></div>
+    </div>
+
+  </div><!-- /results -->
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+
+function setStatus(text) {
+  $('status').classList.add('visible');
+  $('statusText').textContent = text;
+}
+
+function hideStatus() {
+  $('status').classList.remove('visible');
+}
+
+function showError(msg) {
+  const el = $('error');
+  el.textContent = '⚠ ' + msg;
+  el.classList.add('visible');
+}
+
+function clearError() {
+  $('error').classList.remove('visible');
+}
+
+function fmtUsd(n) {
+  return '$' + Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 });
+}
+
+async function analyze() {
+  const btn = $('analyzeBtn');
+  const wallet = $('wallet').value.trim();
+
+  clearError();
+  $('results').classList.remove('visible');
+  btn.disabled = true;
+  setStatus('Fetching live Polymarket events…');
+
+  try {
+    const res = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ walletAddress: wallet }),
+    });
+
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+
+    hideStatus();
+    render(data.output);
+  } catch (err) {
+    hideStatus();
+    showError(err.message ?? String(err));
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function render(out) {
+  // Stats
+  $('r-total').textContent = fmtUsd(out.analysis_metadata.portfolio_total_usd);
+  const risk = out.analysis_metadata.portfolio_risk_score;
+  $('r-risk').textContent = risk;
+  $('r-risk').className = 'stat-value ' + risk;
+
+  const status = out.status;
+  $('r-status').textContent = status === 'SUCCESS' ? 'HEDGED' : status.replace(/_/g, ' ');
+  $('r-status').className = 'stat-value ' + status;
+
+  // Risk decomposition
+  const decomp = $('r-decomp');
+  decomp.innerHTML = '';
+  for (const pos of out.risk_decomposition) {
+    const el = document.createElement('div');
+    el.className = 'token-block';
+
+    const factors = pos.risk_factors.map(f => `
+      <div class="factor-row">
+        <span class="factor-badge sev-${f.severity}">${f.severity}</span>
+        <span class="factor-id">${f.factor_id}</span>
+        <span class="factor-rationale">${f.rationale}</span>
+      </div>`).join('');
+
+    el.innerHTML = `
+      <div class="token-header">
+        <span class="token-symbol">${pos.token_symbol}</span>
+        <span class="token-meta">${fmtUsd(pos.usd_value)} · ${pos.portfolio_weight_pct}%</span>
+        <div class="weight-bar-wrap" style="flex:1">
+          <div class="weight-bar" style="width:${pos.portfolio_weight_pct}%"></div>
+        </div>
+      </div>
+      ${factors}`;
+    decomp.appendChild(el);
+  }
+
+  // Hedges
+  const hedgesEl = $('r-hedges');
+  hedgesEl.innerHTML = '';
+  if (out.hedges.length === 0) {
+    hedgesEl.innerHTML = `
+      <div class="no-hedge">
+        <div class="icon">◎</div>
+        <p>${out.fallback_reason ?? 'No eligible hedge found in the current event pool.'}</p>
+      </div>`;
+  } else {
+    for (const h of out.hedges) {
+      const sideClass = h.hedge_side === 'YES' ? 'YES' : 'NO';
+      const el = document.createElement('div');
+      el.className = 'hedge-card';
+      el.innerHTML = `
+        <div class="hedge-title">${h.event_title}</div>
+        <div class="hedge-meta">
+          <div class="hedge-kv">
+            <div class="hedge-k">Side</div>
+            <div class="hedge-v ${sideClass}">Buy ${h.hedge_side} @ ${h.entry_price}</div>
+          </div>
+          <div class="hedge-kv">
+            <div class="hedge-k">Allocation</div>
+            <div class="hedge-v">${fmtUsd(h.implied_usd_allocation)}</div>
+          </div>
+          <div class="hedge-kv">
+            <div class="hedge-k">Factor</div>
+            <div class="hedge-v">${h.risk_factor_covered}</div>
+          </div>
+          <div class="hedge-kv">
+            <div class="hedge-k">Liquidity</div>
+            <div class="hedge-v">${h.liquidity_tier}</div>
+          </div>
+        </div>
+        <div class="bar-wrap">
+          <div class="bar-fill" style="width:${h.weight_pct}%"></div>
+        </div>
+        <div class="bar-label">
+          <span>Portfolio weight</span>
+          <span>${h.weight_pct}%</span>
+        </div>
+        <details class="verification">
+          <summary>Direction verification</summary>
+          <div style="margin-top:8px">${h.direction_verification}</div>
+        </details>`;
+      hedgesEl.appendChild(el);
+    }
+  }
+
+  // Warnings
+  if (out.warnings.length > 0) {
+    $('warnings-section').style.display = 'block';
+    $('r-warnings').innerHTML = out.warnings.map(w =>
+      `<div class="list-row"><span class="warn-text">⚠ ${w}</span></div>`
+    ).join('');
+  } else {
+    $('warnings-section').style.display = 'none';
+  }
+
+  // Skipped events
+  if (out.skipped_events.length > 0) {
+    $('skipped-section').style.display = 'block';
+    $('r-skipped').innerHTML = out.skipped_events.map(s =>
+      `<div class="list-row">
+        <span class="skip-id">${s.event_id.slice(0,12)}…</span>
+        <span>${s.title.slice(0,55)}…</span>
+        <span class="skip-reason">${s.skip_reason}</span>
+      </div>`
+    ).join('');
+  } else {
+    $('skipped-section').style.display = 'none';
+  }
+
+  $('results').classList.add('visible');
+}
+</script>
+</body>
+</html>

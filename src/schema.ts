@@ -59,7 +59,8 @@ const CanonicalFieldsSchema = z.object({
   resolution_date: z.string().nullable(),
   volume_usd: z.number(),
   yes_price: z.number(),
-  liquidity_tier: LiquidityTier,
+  // Derived from volume_usd in post-processing if the model omits it
+  liquidity_tier: LiquidityTier.optional(),
 });
 
 const RelevanceScoreSchema = z.object({
